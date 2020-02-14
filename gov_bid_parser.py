@@ -3,6 +3,8 @@
 import os
 import json
 import pandas
+import logging
+import codecs
 import configparser
 from datetime import datetime
 
@@ -20,17 +22,24 @@ REQUEST_HEADER = {
 }
 
 
-def read_search_keywords_from_config_as_list():
+def load_config_file():
     config_filename = "config.ini"
     if os.path.exists(config_filename):
-        try:
-            config = configparser.ConfigParser()
-            config.read(config_filename)
-            return config["default"]["search_keywords"].split(",")
-        except Exception:
-            raise ValueError("Search keywords format error")
+        config = configparser.ConfigParser()
+        config.readfp(codecs.open(config_filename, "r", encoding="utf-8-sig"))
+        return config
     else:
         raise FileNotFoundError("Config file not found -> config.ini")
+
+
+def read_search_keywords_from_config_as_list():
+    try:
+        config = load_config_file()
+        logging.debug(config)
+        return config["default"]["search_keywords"].split(",")
+    except Exception as e:
+        logging.exception(e)
+        raise ValueError("Search keywords format error")
 
 
 def save_to_xlsx(xls_file, data):
@@ -43,14 +52,33 @@ def get_today_date_string():
     year, month, day = today_string.split("/")
     tw_year = int(year) - 1911
     tw_date_string = "{}/{}/{}".format(tw_year, month, day)
-    print("Date: {}".format(tw_date_string))
     return tw_date_string
 
 
-def gov_bid_parser(search_keyword, date_string):
+def get_start_date():
+    config = load_config_file()
+    start_date = config["default"]["search_start_date"]
+    if not start_date:
+        start_date = get_today_date_string()
+    return start_date
+
+
+def get_end_date():
+    config = load_config_file()
+    end_date = config["default"]["search_end_date"]
+    if not end_date:
+        end_date = get_today_date_string()
+    return end_date
+
+
+def gov_bid_parser(search_keyword):
     base_url = "http://web.pcc.gov.tw/tps"
     url = "{}/pss/tender.do?searchMode=common&searchType=basic".format(
         base_url)
+    search_start_date = get_start_date()
+    search_end_date = get_end_date()
+    print("Search Date From [{}] - [{}]".format(
+        search_start_date, search_end_date))
     params = {
         "method": "search",
         "searchMethod": "true",
@@ -64,10 +92,10 @@ def gov_bid_parser(search_keyword, date_string):
         "tenderType": "tenderDeclaration",
         "tenderWay": "1,2,3,4,5,6,7,10,12",
         "tenderDateRadio": "on",
-        "tenderStartDateStr": "109/01/28",
-        "tenderEndDateStr": date_string,
-        "tenderStartDate": date_string,
-        "tenderEndDate": date_string,
+        "tenderStartDateStr": search_start_date,
+        "tenderEndDateStr": search_end_date,
+        "tenderStartDate": search_start_date,
+        "tenderEndDate": search_end_date,
         "isSpdt": "N",
         "proctrgCate": "",
         "btnQuery": "查詢",
@@ -105,12 +133,11 @@ def gov_bid_parser(search_keyword, date_string):
 
 
 if __name__ == "__main__":
-    todays_date = get_today_date_string()
     search_list = read_search_keywords_from_config_as_list()
     summary_dict = {}
     for keyword in search_list:
         print("Try to search keywords: {}".format(keyword))
-        result_dict = gov_bid_parser(keyword, todays_date)
+        result_dict = gov_bid_parser(keyword)
         summary_dict.update(result_dict)
     save_to_xlsx("gov_bids.xlsx", summary_dict)
     os.system("pause")
