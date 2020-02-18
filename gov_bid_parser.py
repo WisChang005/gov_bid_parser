@@ -21,6 +21,12 @@ REQUEST_HEADER = {
     "Accept-Language": "en,zh-TW;q=0.9,zh;q=0.8,en-US;q=0.7"
 }
 
+CATEGORY = {
+    "工程": "1",
+    "財務": "2",
+    "勞務": "3"
+}
+
 
 def load_config_file():
     config_filename = "config.ini"
@@ -34,7 +40,7 @@ def load_config_file():
 
 def read_search_keywords_from_config_as_list():
     try:
-        config = load_config_file()
+        config = GLOBAL_CONFIG
         logging.debug(config)
         return config["default"]["search_keywords"].split(",")
     except Exception as e:
@@ -56,7 +62,7 @@ def get_today_date_string():
 
 
 def get_start_date():
-    config = load_config_file()
+    config = GLOBAL_CONFIG
     start_date = config["default"]["search_start_date"]
     if not start_date:
         start_date = get_today_date_string()
@@ -64,11 +70,18 @@ def get_start_date():
 
 
 def get_end_date():
-    config = load_config_file()
+    config = GLOBAL_CONFIG
     end_date = config["default"]["search_end_date"]
     if not end_date:
         end_date = get_today_date_string()
     return end_date
+
+
+def get_category_index():
+    category = GLOBAL_CONFIG["default"]["category"]
+    if not category:
+        raise ValueError("Please give Category value")
+    return category
 
 
 def gov_bid_parser(search_keyword):
@@ -77,6 +90,7 @@ def gov_bid_parser(search_keyword):
         base_url)
     search_start_date = get_start_date()
     search_end_date = get_end_date()
+    search_category_index = get_category_index()
     print("Search Date From [{}] - [{}]".format(
         search_start_date, search_end_date))
     params = {
@@ -97,7 +111,8 @@ def gov_bid_parser(search_keyword):
         "tenderStartDate": search_start_date,
         "tenderEndDate": search_end_date,
         "isSpdt": "N",
-        "proctrgCate": "",
+        "proctrgCate": search_category_index,
+        "radProctrgCate": search_category_index,
         "btnQuery": "查詢",
         "hadUpdated": ""
     }
@@ -111,6 +126,7 @@ def gov_bid_parser(search_keyword):
     counts = 0
     for tr_tag in tr_tags:
         td_tags = tr_tag.find_all("td")
+        is_remove = False
         items = {}
         for i, td_tag in enumerate(td_tags):
             link = ""
@@ -122,17 +138,26 @@ def gov_bid_parser(search_keyword):
                     link = link_tag["href"].replace("..", base_url)
                     text = link_tag.text.strip()
 
+                # check the price over 2,000,000
+                if i == 8:
+                    text = int(text.replace(",", ""))
+                    if text < 2000000:
+                        is_remove = True
+                        break
+
                 items.update({title_mapping[i]: text})
                 if link and i == 2:
                     items.update({title_mapping[i + 7]: link})
 
-        total_bids.update({"{} {}".format(search_keyword, counts): items})
+        if not is_remove:
+            total_bids.update({"{} {}".format(search_keyword, counts): items})
         counts += 1
 
     return total_bids
 
 
 if __name__ == "__main__":
+    GLOBAL_CONFIG = load_config_file()
     search_list = read_search_keywords_from_config_as_list()
     summary_dict = {}
     for keyword in search_list:
